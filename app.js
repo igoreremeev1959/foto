@@ -5,7 +5,7 @@
   const canvas = document.getElementById('photoCanvas');
   const ctx = canvas.getContext('2d', { willReadFrequently: true });
   const stage = document.getElementById('stageWrap');
-  const controls = ['exposure', 'contrast', 'saturation', 'warmth', 'clarity'];
+  const controls = ['exposure', 'contrast', 'saturation', 'warmth', 'clarity', 'sharpness', 'denoise'];
   const originalBadge = document.getElementById('originalBadge');
   let originalImage = null;
   let originalPixels = null;
@@ -77,62 +77,76 @@
     return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
   }
 
-  function render() {
-    if (!originalPixels || !originalImage) return;
-    const src = originalPixels.data;
-    const out = ctx.createImageData(originalPixels.width, originalPixels.height);
+  // Apply the same restrained pixel pipeline to the preview and full-size export.
+  function enhancePixels(input, width, height) {
+    const src = input.data;
+    const out = new ImageData(width, height);
     const dst = out.data;
     const exposure = Math.pow(2, value('exposure') / 100);
     const contrast = contrastFactor(value('contrast'));
     const saturation = 1 + value('saturation') / 100;
     const warmth = value('warmth') * 0.42;
     const clarity = value('clarity') / 100;
-    const w = originalPixels.width, h = originalPixels.height;
-    // Mild local contrast enhancement adds definition without inventing detail.
-    const blur = clarity > 0 ? new Uint8ClampedArray(src.length) : null;
-    if (blur) {
-      const radius = Math.max(1, Math.round(1 + clarity * 2));
-      const step = Math.max(1, Math.floor(Math.max(w, h) / 900));
-      for (let y = 0; y < h; y += step) {
-        for (let x = 0; x < w; x += step) {
-          let r = 0, g = 0, b = 0, count = 0;
-          for (let oy = -radius; oy <= radius; oy += step) for (let ox = -radius; ox <= radius; ox += step) {
-            const xx = Math.max(0, Math.min(w - 1, x + ox));
-            const yy = Math.max(0, Math.min(h - 1, y + oy));
-            const i = (yy * w + xx) * 4;
-            r += src[i]; g += src[i + 1]; b += src[i + 2]; count++;
-          }
-          const ri = (y * w + x) * 4;
-          blur[ri] = r / count; blur[ri + 1] = g / count; blur[ri + 2] = b / count;
+    const sharpness = value('sharpness') / 100;
+    const denoise = value('denoise') / 100;
+    const detail = clarity * 0.28 + sharpness * 0.72;
+    const mix = denoise * 0.42;
+    const threshold = 10 + denoise * 54;
+
+    for (let y = 0; y < height; y++) {
+      for (let x = 0; x < width; x++) {
+        const i = (y * width + x) * 4;
+        let r = src[i], g = src[i + 1], b = src[i + 2];
+        const left = (y * width + Math.max(0, x - 1)) * 4;
+        const right = (y * width + Math.min(width - 1, x + 1)) * 4;
+        const up = (Math.max(0, y - 1) * width + x) * 4;
+        const down = (Math.min(height - 1, y + 1) * width + x) * 4;
+
+        if (denoise > 0) {
+          const centerLum = 0.2126 * r + 0.7152 * g + 0.0722 * b;
+          let rr = 0, gg = 0, bb = 0, weightSum = 0;
+          let nr = src[left], ng = src[left + 1], nb = src[left + 2];
+          let delta = (0.2126 * nr + 0.7152 * ng + 0.0722 * nb - centerLum) / threshold;
+          let weight = 1 / (1 + delta * delta);
+          rr += nr * weight; gg += ng * weight; bb += nb * weight; weightSum += weight;
+          nr = src[right]; ng = src[right + 1]; nb = src[right + 2];
+          delta = (0.2126 * nr + 0.7152 * ng + 0.0722 * nb - centerLum) / threshold;
+          weight = 1 / (1 + delta * delta);
+          rr += nr * weight; gg += ng * weight; bb += nb * weight; weightSum += weight;
+          nr = src[up]; ng = src[up + 1]; nb = src[up + 2];
+          delta = (0.2126 * nr + 0.7152 * ng + 0.0722 * nb - centerLum) / threshold;
+          weight = 1 / (1 + delta * delta);
+          rr += nr * weight; gg += ng * weight; bb += nb * weight; weightSum += weight;
+          nr = src[down]; ng = src[down + 1]; nb = src[down + 2];
+          delta = (0.2126 * nr + 0.7152 * ng + 0.0722 * nb - centerLum) / threshold;
+          weight = 1 / (1 + delta * delta);
+          rr += nr * weight; gg += ng * weight; bb += nb * weight; weightSum += weight;
+          r = r * (1 - mix) + (rr / weightSum) * mix;
+          g = g * (1 - mix) + (gg / weightSum) * mix;
+          b = b * (1 - mix) + (bb / weightSum) * mix;
         }
-      }
-      // Expand the sampled low-frequency layer for a smooth clarity effect.
-      for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
-        const i = (y * w + x) * 4;
-        if (!blur[i] && (x || y)) {
-          const si = ((Math.floor(y / step) * step) * w + Math.floor(x / step) * step) * 4;
-          blur[i] = blur[si]; blur[i + 1] = blur[si + 1]; blur[i + 2] = blur[si + 2];
+        if (detail > 0) {
+          const amount = detail * 0.9;
+          r += (src[i] - (src[left] + src[right] + src[up] + src[down]) / 4) * amount;
+          g += (src[i + 1] - (src[left + 1] + src[right + 1] + src[up + 1] + src[down + 1]) / 4) * amount;
+          b += (src[i + 2] - (src[left + 2] + src[right + 2] + src[up + 2] + src[down + 2]) / 4) * amount;
         }
+        r = (r * exposure - 128) * contrast + 128 + warmth;
+        g = (g * exposure - 128) * contrast + 128;
+        b = (b * exposure - 128) * contrast + 128 - warmth;
+        const luminance = 0.2126 * r + 0.7152 * g + 0.0722 * b;
+        dst[i] = clamp(luminance + (r - luminance) * saturation);
+        dst[i + 1] = clamp(luminance + (g - luminance) * saturation);
+        dst[i + 2] = clamp(luminance + (b - luminance) * saturation);
+        dst[i + 3] = src[i + 3];
       }
     }
-    for (let i = 0; i < src.length; i += 4) {
-      let r = src[i], g = src[i + 1], b = src[i + 2];
-      if (blur) {
-        const amount = clarity * 0.8;
-        r += (r - blur[i]) * amount;
-        g += (g - blur[i + 1]) * amount;
-        b += (b - blur[i + 2]) * amount;
-      }
-      r = (r * exposure - 128) * contrast + 128 + warmth;
-      g = (g * exposure - 128) * contrast + 128;
-      b = (b * exposure - 128) * contrast + 128 - warmth;
-      const luminance = 0.2126 * r + 0.7152 * g + 0.0722 * b;
-      dst[i] = clamp(luminance + (r - luminance) * saturation);
-      dst[i + 1] = clamp(luminance + (g - luminance) * saturation);
-      dst[i + 2] = clamp(luminance + (b - luminance) * saturation);
-      dst[i + 3] = src[i + 3];
-    }
-    ctx.putImageData(out, 0, 0);
+    return out;
+  }
+
+  function render() {
+    if (!originalPixels || !originalImage) return;
+    ctx.putImageData(enhancePixels(originalPixels, originalPixels.width, originalPixels.height), 0, 0);
   }
 
   function scheduleRender() {
@@ -155,20 +169,35 @@
       return;
     }
     const data = originalPixels.data;
-    let sum = 0, sumSq = 0, count = 0;
-    const stride = Math.max(4, Math.floor(data.length / 16000 / 4) * 4);
-    for (let i = 0; i < data.length; i += stride) {
-      const lum = 0.2126 * data[i] + 0.7152 * data[i + 1] + 0.0722 * data[i + 2];
-      sum += lum; sumSq += lum * lum; count++;
+    const histogram = new Uint32Array(256);
+    const pixelCount = data.length / 4;
+    const pixelStep = Math.max(1, Math.floor(pixelCount / 24000));
+    let samples = 0;
+    for (let pixel = 0; pixel < pixelCount; pixel += pixelStep) {
+      const i = pixel * 4;
+      const luminance = Math.round(0.2126 * data[i] + 0.7152 * data[i + 1] + 0.0722 * data[i + 2]);
+      histogram[luminance]++;
+      samples++;
     }
-    const mean = sum / count;
-    const contrast = Math.sqrt(Math.max(0, sumSq / count - mean * mean));
-    const exposure = Math.max(-20, Math.min(24, Math.round((128 - mean) / 5)));
+    const percentile = (fraction) => {
+      const target = samples * fraction;
+      let accumulated = 0;
+      for (let level = 0; level < histogram.length; level++) {
+        accumulated += histogram[level];
+        if (accumulated >= target) return level;
+      }
+      return 128;
+    };
+    const low = percentile(0.02), median = percentile(0.5), high = percentile(0.98);
+    const exposure = Math.max(-35, Math.min(35, Math.round(Math.log2(128 / Math.max(1, median)) * 100)));
+    const contrast = Math.max(-4, Math.min(18, Math.round((215 - (high - low)) * 0.18)));
     document.getElementById('exposure').value = exposure;
-    document.getElementById('contrast').value = Math.max(5, Math.min(24, Math.round((56 - contrast) / 2)));
-    document.getElementById('saturation').value = 10;
-    document.getElementById('warmth').value = 2;
-    document.getElementById('clarity').value = 13;
+    document.getElementById('contrast').value = contrast;
+    document.getElementById('saturation').value = 8;
+    document.getElementById('warmth').value = 0;
+    document.getElementById('clarity').value = 8;
+    document.getElementById('sharpness').value = 10;
+    document.getElementById('denoise').value = 6;
     controls.forEach((name) => updateRange(document.getElementById(name)));
     render();
     showToast('A fresh little lift, just for this photo.');
@@ -226,37 +255,11 @@
     exportCanvas.width = Math.round(originalImage.naturalWidth * scale);
     exportCanvas.height = Math.round(originalImage.naturalHeight * scale);
     const exportCtx = exportCanvas.getContext('2d', { willReadFrequently: true });
+    exportCtx.fillStyle = '#fff';
+    exportCtx.fillRect(0, 0, exportCanvas.width, exportCanvas.height);
     exportCtx.drawImage(originalImage, 0, 0, exportCanvas.width, exportCanvas.height);
-    const src = exportCtx.getImageData(0, 0, exportCanvas.width, exportCanvas.height);
-    const data = src.data;
-    const base = data.slice();
-    const exportWidth = exportCanvas.width, exportHeight = exportCanvas.height;
-    const clarity = value('clarity') / 100;
-    const exposure = Math.pow(2, value('exposure') / 100);
-    const contrast = contrastFactor(value('contrast'));
-    const saturation = 1 + value('saturation') / 100, warmth = value('warmth') * .42;
-    for (let y = 0; y < exportHeight; y++) for (let x = 0; x < exportWidth; x++) {
-      const i = (y * exportWidth + x) * 4;
-      let r = base[i], g = base[i + 1], b = base[i + 2];
-      if (clarity > 0) {
-        const left = (y * exportWidth + Math.max(0, x - 1)) * 4;
-        const right = (y * exportWidth + Math.min(exportWidth - 1, x + 1)) * 4;
-        const up = (Math.max(0, y - 1) * exportWidth + x) * 4;
-        const down = (Math.min(exportHeight - 1, y + 1) * exportWidth + x) * 4;
-        const amount = clarity * .55;
-        r += (r - (base[left] + base[right] + base[up] + base[down]) / 4) * amount;
-        g += (g - (base[left + 1] + base[right + 1] + base[up + 1] + base[down + 1]) / 4) * amount;
-        b += (b - (base[left + 2] + base[right + 2] + base[up + 2] + base[down + 2]) / 4) * amount;
-      }
-      r = (r * exposure - 128) * contrast + 128 + warmth;
-      g = (g * exposure - 128) * contrast + 128;
-      b = (b * exposure - 128) * contrast + 128 - warmth;
-      const l = .2126 * r + .7152 * g + .0722 * b;
-      data[i] = clamp(l + (r - l) * saturation);
-      data[i + 1] = clamp(l + (g - l) * saturation);
-      data[i + 2] = clamp(l + (b - l) * saturation);
-    }
-    exportCtx.putImageData(src, 0, 0);
+    const sourcePixels = exportCtx.getImageData(0, 0, exportCanvas.width, exportCanvas.height);
+    exportCtx.putImageData(enhancePixels(sourcePixels, exportCanvas.width, exportCanvas.height), 0, 0);
     exportCanvas.toBlob((blob) => {
       if (!blob) { showToast('Could not export this image.'); return; }
       const link = document.createElement('a');

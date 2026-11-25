@@ -1,0 +1,67 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#f5f3ef">
+  <title>Foto — Photo Enhancer</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <main class="app-shell">
+    <header class="topbar">
+      <a class="brand" href="#" aria-label="Foto home"><span class="brand-mark"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7.5A2.5 2.5 0 0 1 6.5 5h2l1.3-1.5h4.4L15.5 5h2A2.5 2.5 0 0 1 20 7.5v9a2.5 2.5 0 0 1-2.5 2.5h-11A2.5 2.5 0 0 1 4 16.5z"/><circle cx="12" cy="12" r="4"/></svg></span>foto<span class="brand-dot">.</span></a>
+      <div class="topbar-center"><span class="status-dot"></span> Your private photo studio <span class="divider">·</span> Images never leave your device</div>
+      <button class="help-button" id="helpButton" type="button" aria-label="About Foto">?</button>
+    </header>
+
+    <section class="workspace">
+      <aside class="sidebar">
+        <div class="eyebrow">PHOTO EDITOR</div>
+        <h1>Make every<br>color <em>feel right.</em></h1>
+        <p class="intro">Bring your photos to life with thoughtful color and clarity adjustments.</p>
+
+        <div class="control-heading"><span>Adjustments</span><button id="resetButton" class="text-button" type="button">Reset</button></div>
+        <button id="autoButton" class="auto-button" type="button"><span class="sparkle">✦</span><span><strong>Auto enhance</strong><small>One tap, a little more magic</small></span><span class="arrow">↗</span></button>
+
+        <div class="controls" id="controls" aria-label="Photo adjustments">
+          <label class="control" for="exposure"><span class="control-label"><span class="control-icon">☼</span>Exposure</span><output id="exposureValue">0</output><input id="exposure" type="range" min="-100" max="100" value="0" data-default="0"></label>
+          <label class="control" for="contrast"><span class="control-label"><span class="control-icon contrast-icon">◐</span>Contrast</span><output id="contrastValue">0</output><input id="contrast" type="range" min="-100" max="100" value="0" data-default="0"></label>
+          <label class="control" for="saturation"><span class="control-label"><span class="control-icon">◉</span>Saturation</span><output id="saturationValue">0</output><input id="saturation" type="range" min="-100" max="100" value="0" data-default="0"></label>
+          <label class="control" for="warmth"><span class="control-label"><span class="control-icon warmth-icon">♨</span>Warmth</span><output id="warmthValue">0</output><input id="warmth" type="range" min="-100" max="100" value="0" data-default="0"></label>
+          <label class="control" for="clarity"><span class="control-label"><span class="control-icon">✧</span>Clarity</span><output id="clarityValue">0</output><input id="clarity" type="range" min="0" max="100" value="0" data-default="0"></label>
+        </div>
+        <div class="sidebar-bottom"><span class="privacy-icon">◈</span><span>Made for your photos.<br><b>Private by design.</b></span></div>
+      </aside>
+
+      <section class="canvas-area" aria-label="Photo preview">
+        <div class="canvas-toolbar">
+          <div class="file-info"><span class="file-icon">▧</span><span id="fileName">Untitled photo</span><span class="photo-size" id="fileSize"></span></div>
+          <div class="toolbar-actions"><button id="compareButton" class="icon-button" type="button" aria-pressed="false" title="Hold to compare original"><span>◫</span><span class="compare-label">Compare</span></button><button id="uploadButton" class="secondary-button" type="button">Replace photo</button></div>
+        </div>
+        <div class="stage-wrap" id="stageWrap">
+          <div class="dropzone" id="dropzone" tabindex="0" role="button" aria-label="Choose a photo to enhance">
+            <div class="drop-illustration"><div class="sun-disc"></div><div class="mountain mountain-back"></div><div class="mountain mountain-front"></div><span class="plus">+</span></div>
+            <h2>Your next favorite photo<br>starts here.</h2>
+            <p>Drop an image to get started, or browse your device.</p>
+            <button class="primary-button" id="browseButton" type="button"><span>↑</span> Choose a photo</button>
+            <div class="supported">JPG, PNG, WebP or HEIC <span>·</span> up to 25 MB</div>
+          </div>
+          <div class="preview" id="preview" hidden>
+            <div class="image-frame" id="imageFrame"><canvas id="photoCanvas"></canvas><div class="original-badge" id="originalBadge">Original</div></div>
+            <button class="empty-replace" id="emptyReplace" type="button">＋ Replace photo</button>
+          </div>
+          <input id="fileInput" type="file" accept="image/jpeg,image/png,image/webp,image/heic,image/heif" hidden>
+        </div>
+        <div class="canvas-footer"><span id="photoDimensions">Ready when you are</span><span class="footer-tip"><span>⌘</span> Drag in a photo or choose a file</span></div>
+      </section>
+    </section>
+    <div class="toast" id="toast" role="status" aria-live="polite"></div>
+    <dialog id="helpDialog"><button class="dialog-close" id="closeHelp" aria-label="Close">×</button><div class="dialog-kicker">A LITTLE NOTE</div><h2>Good photos,<br>made even better.</h2><p>Adjustments happen right in your browser. Your original image stays untouched, and your photo is never uploaded anywhere.</p><button class="primary-button dialog-ok" id="dialogOk">Got it</button></dialog>
+  </main>
+  <script src="app.js"></script>
+</body>
+</html>
